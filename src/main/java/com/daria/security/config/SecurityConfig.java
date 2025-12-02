@@ -17,7 +17,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
+import java.util.List;
 
 /**
  * Конфигурация безопасности Spring Security
@@ -39,6 +39,8 @@ public class SecurityConfig {
   /**
    * Конфигурация CORS для разрешения запросов со всех источников
    * 
+   * Настройка Access-Control-Allow-Origin: * для всех хостов
+   * 
    * ВАЖНО: В production рекомендуется ограничить allowedOrigins
    * конкретными доменами вместо "*"
    */
@@ -46,24 +48,25 @@ public class SecurityConfig {
   public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration configuration = new CorsConfiguration();
     
-    // Разрешаем все источники (для development)
-    // В production укажите конкретные домены: Arrays.asList("http://localhost:5173", "https://yourdomain.com")
-    configuration.setAllowedOrigins(Arrays.asList("*"));
+    // Разрешаем все источники (Access-Control-Allow-Origin: *)
+    // Используем List.of("*") для установки заголовка Access-Control-Allow-Origin: *
+    configuration.setAllowedOrigins(List.of("*"));
     
     // Разрешаем все методы HTTP
-    configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
     
     // Разрешаем все заголовки
-    configuration.setAllowedHeaders(Arrays.asList("*"));
+    configuration.setAllowedHeaders(List.of("*"));
     
-    // Разрешаем отправку credentials (cookies, authorization headers)
-    configuration.setAllowCredentials(false); // Должно быть false при allowedOrigins("*")
+    // При использовании allowedOrigins("*") нельзя использовать allowCredentials(true)
+    // Если нужны credentials, используйте setAllowedOriginPatterns("*") вместо setAllowedOrigins
+    configuration.setAllowCredentials(false);
     
-    // Время кеширования preflight запросов
+    // Время кеширования preflight запросов (1 час)
     configuration.setMaxAge(3600L);
     
     // Разрешаем все заголовки в ответе
-    configuration.setExposedHeaders(Arrays.asList("*"));
+    configuration.setExposedHeaders(List.of("*"));
     
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);
@@ -104,9 +107,13 @@ public class SecurityConfig {
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(auth -> auth
             // Публичные endpoints (не требуют аутентификации)
-            // register требует ADMIN роль (контролируется через @PreAuthorize на методе)
+            // /auth/login - доступен всем для входа в систему
+            // /auth/register - доступен всем на уровне URL, но требует роль ADMIN через @PreAuthorize
+            // Это позволяет @PreAuthorize работать корректно: неаутентифицированные получат 403,
+            // аутентифицированные без роли ADMIN тоже получат 403, только ADMIN сможет зарегистрировать
             .requestMatchers(
-                "/v1/employee-service/auth/login"
+                "/v1/employee-service/auth/login",
+                "/v1/employee-service/auth/register"
             ).permitAll()
             // Swagger UI доступен без аутентификации (для удобства разработки)
             .requestMatchers(
