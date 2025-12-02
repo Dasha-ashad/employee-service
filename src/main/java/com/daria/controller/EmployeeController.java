@@ -29,12 +29,57 @@ public class EmployeeController {
 
   private final EmployeeService employeeService;
 
-  @Operation(summary = "Получить всех сотрудников", description = "Возвращает список всех сотрудников. Доступно всем аутентифицированным пользователям.")
+  @Operation(
+      summary = "Получить всех сотрудников", 
+      description = "Возвращает список всех сотрудников с опциональной фильтрацией и сортировкой. " +
+          "Доступно всем аутентифицированным пользователям. " +
+          "Параметры фильтрации: search (поиск по имени), departmentId (фильтр по отделу), " +
+          "gender (фильтр по полу: М или Ж), sortBy (сортировка: absences или competence_level).")
   @ApiResponse(responseCode = "200", description = "Список сотрудников успешно получен")
   @GetMapping
   // Просмотр доступен всем аутентифицированным пользователям
-  public ResponseEntity<List<EmployeeDto>> getAllEmployees() {
-    List<EmployeeDto> employees = employeeService.getAllEmployees();
+  public ResponseEntity<List<EmployeeDto>> getAllEmployees(
+      @RequestParam(required = false) String search,
+      @RequestParam(required = false) Long departmentId,
+      @RequestParam(required = false) String gender,
+      @RequestParam(required = false) String sortBy) {
+    
+    // Валидация и нормализация параметров
+    // search: нормализуем пустые строки в null
+    String normalizedSearch = (search != null && search.trim().isEmpty()) ? null : search;
+    
+    // departmentId: проверяем, что это валидное положительное число
+    Long normalizedDepartmentId = null;
+    if (departmentId != null && departmentId > 0) {
+      normalizedDepartmentId = departmentId;
+    }
+    
+    // gender: преобразуем строку в enum, если указана
+    // ВАЖНО: Gender enum использует кириллицу (М, Ж), поэтому сравниваем напрямую
+    com.daria.entity.enums.Gender genderEnum = null;
+    if (gender != null && !gender.trim().isEmpty()) {
+      String trimmedGender = gender.trim();
+      // Проверяем значения enum (М или Ж)
+      if ("М".equals(trimmedGender)) {
+        genderEnum = com.daria.entity.enums.Gender.М;
+      } else if ("Ж".equals(trimmedGender)) {
+        genderEnum = com.daria.entity.enums.Gender.Ж;
+      }
+      // Если значение невалидное, оставляем null (игнорируем фильтр)
+    }
+    
+    // sortBy: проверяем, что это валидное значение
+    String normalizedSortBy = null;
+    if (sortBy != null && !sortBy.trim().isEmpty()) {
+      String trimmedSortBy = sortBy.trim();
+      if ("absences".equals(trimmedSortBy) || "competence_level".equals(trimmedSortBy)) {
+        normalizedSortBy = trimmedSortBy;
+      }
+      // Если значение невалидное, игнорируем сортировку
+    }
+    
+    List<EmployeeDto> employees = employeeService.getAllEmployees(
+        normalizedSearch, normalizedDepartmentId, genderEnum, normalizedSortBy);
     return ResponseEntity.ok(employees);
   }
 

@@ -1,0 +1,424 @@
+package com.daria.service;
+
+import com.daria.dto.AnalyticsDto;
+import com.daria.entity.AbsenceEntity;
+import com.daria.entity.Employee;
+import com.daria.entity.Training;
+import com.daria.entity.enums.CompetenceRank;
+import com.daria.entity.enums.Gender;
+import com.daria.repository.AbsenceRepository;
+import com.daria.repository.DepartmentRepository;
+import com.daria.repository.EmployeeRepository;
+import com.daria.repository.TrainingRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * Сервис для расчета аналитических данных
+ * 
+ * Лучшие практики:
+ * - Фильтрация данных на уровне БД для производительности
+ * - Кэширование результатов (можно добавить в будущем)
+ * - Обработка edge cases (пустые данные, null значения)
+ * - Поддержка фильтрации по отделу и периоду
+ */
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class AnalyticsService {
+
+  private final EmployeeRepository employeeRepository;
+  private final DepartmentRepository departmentRepository;
+  private final AbsenceRepository absenceRepository;
+  private final TrainingRepository trainingRepository;
+
+  /**
+   * Получить аналитические данные с фильтрацией
+   * 
+   * @param departmentId фильтр по отделу (null = все отделы)
+   * @param period период: "month", "quarter", "year" (null = все время)
+   * @return аналитические данные
+   */
+  public AnalyticsDto getAnalytics(Long departmentId, String period) {
+    // Получаем список сотрудников с учетом фильтров
+    List<Employee> employees = getFilteredEmployees(departmentId, period);
+    
+    // Получаем все пропуски для расчета статистики
+    List<AbsenceEntity> allAbsences = absenceRepository.findAll();
+    
+    // Получаем все обучения
+    List<Training> allTrainings = trainingRepository.findAll();
+    
+    // Вычисляем KPI метрики
+    Long totalEmployees = (long) employees.size();
+    Double avgCompetence = calculateAvgCompetence(employees);
+    Long trained = calculateTrainedCount(employees, allTrainings, period);
+    Long fired = calculateFiredCount(employees, period);
+    Double turnoverRate = calculateTurnoverRate(totalEmployees, fired);
+    AnalyticsDto.AbsencesInfo absences = calculateAbsencesInfo(employees, allAbsences);
+    
+    // Данные для графиков
+    List<AnalyticsDto.ChartData> gender = calculateGenderDistribution(employees);
+    List<AnalyticsDto.ChartData> age = calculateAgeDistribution(employees);
+    List<AnalyticsDto.ChartData> ranks = calculateRankDistribution(employees);
+    List<AnalyticsDto.DepartmentChartData> departments = calculateDepartmentDistribution(employees);
+    List<AnalyticsDto.HiresFiresData> hiresFires = calculateHiresFires(employees, period);
+    
+    // Сводные таблицы
+    List<AnalyticsDto.DepartmentSummary> departmentsSummary = calculateDepartmentsSummary(employees);
+    List<AnalyticsDto.EmployeeSummary> employeesSummary = calculateEmployeesSummary(employees, allTrainings, allAbsences);
+    
+    return new AnalyticsDto(
+        totalEmployees,
+        avgCompetence,
+        trained,
+        fired,
+        turnoverRate,
+        absences,
+        gender,
+        age,
+        ranks,
+        departments,
+        hiresFires,
+        departmentsSummary,
+        employeesSummary
+    );
+  }
+
+  /**
+   * Получить отфильтрованных сотрудников
+   */
+  private List<Employee> getFilteredEmployees(Long departmentId, String period) {
+    List<Employee> allEmployees = employeeRepository.findAll();
+    
+    // Фильтр по отделу
+    if (departmentId != null) {
+      allEmployees = allEmployees.stream()
+          .filter(e -> e.getDepartment() != null && e.getDepartment().getId().equals(departmentId))
+          .collect(Collectors.toList());
+    }
+    
+    // Фильтр по периоду (для дат приема/увольнения)
+    if (period != null && !period.isEmpty()) {
+      LocalDate periodStart = getPeriodStart(period);
+      if (periodStart != null) {
+        allEmployees = allEmployees.stream()
+            .filter(e -> {
+              // Фильтруем по дате приема (hireDate должна быть в периоде)
+              if (e.getHireDate() != null && e.getHireDate().isAfter(periodStart)) {
+                return true;
+              }
+              // Или по дате увольнения (fireDate должна быть в периоде)
+              if (e.getFireDate() != null && e.getFireDate().isAfter(periodStart)) {
+                return true;
+              }
+              // Или сотрудник был активен в течение периода
+              return e.getHireDate() != null && e.getHireDate().isBefore(periodStart) &&
+                  (e.getFireDate() == null || e.getFireDate().isAfter(periodStart));
+            })
+            .collect(Collectors.toList());
+      }
+    }
+    
+    return allEmployees;
+  }
+
+  /**
+   * Получить начало периода
+   */
+  private LocalDate getPeriodStart(String period) {
+    LocalDate now = LocalDate.now();
+    return switch (period.toLowerCase()) {
+      case "month" -> now.minusMonths(1);
+      case "quarter" -> now.minusMonths(3);
+      case "year" -> now.minusYears(1);
+      default -> null;
+    };
+  }
+
+  /**
+   * Вычислить среднюю компетенцию
+   */
+  private Double calculateAvgCompetence(List<Employee> employees) {
+    if (employees.isEmpty()) {
+      return 0.0;
+    }
+    
+    double sum = employees.stream()
+        .filter(e -> e.getCompetenceLevel() != null)
+        .mapToInt(Employee::getCompetenceLevel)
+        .sum();
+    
+    long count = employees.stream()
+        .filter(e -> e.getCompetenceLevel() != null)
+        .count();
+    
+    return count > 0 ? sum / count : 0.0;
+  }
+
+  /**
+   * Вычислить количество обученных сотрудников
+   */
+  private Long calculateTrainedCount(List<Employee> employees, List<Training> allTrainings, String period) {
+    LocalDate periodStart = getPeriodStart(period);
+    
+    Set<Long> trainedEmployeeIds = allTrainings.stream()
+        .filter(t -> {
+          if (periodStart != null && t.getStartDate() != null) {
+            return !t.getStartDate().isBefore(periodStart);
+          }
+          return true;
+        })
+        .map(t -> t.getEmployee().getId())
+        .collect(Collectors.toSet());
+    
+    return employees.stream()
+        .filter(e -> trainedEmployeeIds.contains(e.getId()))
+        .count();
+  }
+
+  /**
+   * Вычислить количество уволенных
+   */
+  private Long calculateFiredCount(List<Employee> employees, String period) {
+    LocalDate periodStart = getPeriodStart(period);
+    
+    return employees.stream()
+        .filter(e -> {
+          if (e.getFireDate() == null) {
+            return false;
+          }
+          if (periodStart != null) {
+            return e.getFireDate().isAfter(periodStart);
+          }
+          return true;
+        })
+        .count();
+  }
+
+  /**
+   * Вычислить текучесть кадров (%)
+   */
+  private Double calculateTurnoverRate(Long totalEmployees, Long fired) {
+    if (totalEmployees == null || totalEmployees == 0) {
+      return 0.0;
+    }
+    return (fired.doubleValue() / totalEmployees.doubleValue()) * 100.0;
+  }
+
+  /**
+   * Вычислить информацию о пропусках
+   */
+  private AnalyticsDto.AbsencesInfo calculateAbsencesInfo(List<Employee> employees, List<AbsenceEntity> allAbsences) {
+    Set<Long> employeeIds = employees.stream()
+        .map(Employee::getId)
+        .collect(Collectors.toSet());
+    
+    List<AbsenceEntity> relevantAbsences = allAbsences.stream()
+        .filter(a -> employeeIds.contains(a.getEmployee().getId()))
+        .collect(Collectors.toList());
+    
+    // Разделяем на валидные (GOOD_REASON) и невалидные (BAD_REASON)
+    long valid = relevantAbsences.stream()
+        .filter(a -> a.getStatus() != null && a.getStatus().name().contains("GOOD"))
+        .count();
+    
+    long invalid = relevantAbsences.size() - valid;
+    
+    return new AnalyticsDto.AbsencesInfo(valid, invalid);
+  }
+
+  /**
+   * Вычислить распределение по полу
+   */
+  private List<AnalyticsDto.ChartData> calculateGenderDistribution(List<Employee> employees) {
+    Map<Gender, Long> distribution = employees.stream()
+        .collect(Collectors.groupingBy(
+            Employee::getGender,
+            Collectors.counting()
+        ));
+    
+    return distribution.entrySet().stream()
+        .map(e -> new AnalyticsDto.ChartData(
+            e.getKey() == Gender.М ? "Мужчины" : "Женщины",
+            e.getValue()
+        ))
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * Вычислить распределение по возрасту
+   */
+  private List<AnalyticsDto.ChartData> calculateAgeDistribution(List<Employee> employees) {
+    LocalDate now = LocalDate.now();
+    Map<String, Long> ageGroups = new LinkedHashMap<>();
+    ageGroups.put("18–25", 0L);
+    ageGroups.put("26–35", 0L);
+    ageGroups.put("36–45", 0L);
+    ageGroups.put("46+", 0L);
+    
+    employees.forEach(e -> {
+      if (e.getBirthDate() != null) {
+        long age = ChronoUnit.YEARS.between(e.getBirthDate(), now);
+        if (age >= 18 && age <= 25) {
+          ageGroups.put("18–25", ageGroups.get("18–25") + 1);
+        } else if (age <= 35) {
+          ageGroups.put("26–35", ageGroups.get("26–35") + 1);
+        } else if (age <= 45) {
+          ageGroups.put("36–45", ageGroups.get("36–45") + 1);
+        } else {
+          ageGroups.put("46+", ageGroups.get("46+") + 1);
+        }
+      }
+    });
+    
+    return ageGroups.entrySet().stream()
+        .map(e -> new AnalyticsDto.ChartData(e.getKey(), e.getValue()))
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * Вычислить распределение по рангам
+   */
+  private List<AnalyticsDto.ChartData> calculateRankDistribution(List<Employee> employees) {
+    Map<String, Long> distribution = employees.stream()
+        .collect(Collectors.groupingBy(
+            e -> {
+              CompetenceRank rank = e.getCompetenceRank();
+              if (rank == null) return "Не указан";
+              return switch (rank) {
+                case JUNIOR -> "Начальный";
+                case MIDDLE -> "Средний";
+                case SENIOR -> "Высокий";
+              };
+            },
+            Collectors.counting()
+        ));
+    
+    return distribution.entrySet().stream()
+        .map(e -> new AnalyticsDto.ChartData(e.getKey(), e.getValue()))
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * Вычислить распределение по отделам
+   */
+  private List<AnalyticsDto.DepartmentChartData> calculateDepartmentDistribution(List<Employee> employees) {
+    Map<String, Long> distribution = employees.stream()
+        .filter(e -> e.getDepartment() != null)
+        .collect(Collectors.groupingBy(
+            e -> e.getDepartment().getName(),
+            Collectors.counting()
+        ));
+    
+    return distribution.entrySet().stream()
+        .map(e -> new AnalyticsDto.DepartmentChartData(e.getKey(), e.getValue()))
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * Вычислить данные о приемах и увольнениях
+   */
+  private List<AnalyticsDto.HiresFiresData> calculateHiresFires(List<Employee> employees, String period) {
+    // Упрощенная реализация - можно улучшить для реальных данных
+    List<AnalyticsDto.HiresFiresData> result = new ArrayList<>();
+    
+    // Группируем по месяцам
+    Map<String, Long> hiresByMonth = new LinkedHashMap<>();
+    Map<String, Long> firesByMonth = new LinkedHashMap<>();
+    
+    String[] months = {"Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"};
+    
+    for (String month : months) {
+      hiresByMonth.put(month, 0L);
+      firesByMonth.put(month, 0L);
+    }
+    
+    employees.forEach(e -> {
+      if (e.getHireDate() != null) {
+        int monthIndex = e.getHireDate().getMonthValue() - 1;
+        if (monthIndex >= 0 && monthIndex < months.length) {
+          String month = months[monthIndex];
+          hiresByMonth.put(month, hiresByMonth.get(month) + 1);
+        }
+      }
+      if (e.getFireDate() != null) {
+        int monthIndex = e.getFireDate().getMonthValue() - 1;
+        if (monthIndex >= 0 && monthIndex < months.length) {
+          String month = months[monthIndex];
+          firesByMonth.put(month, firesByMonth.get(month) + 1);
+        }
+      }
+    });
+    
+    for (String month : months) {
+      result.add(new AnalyticsDto.HiresFiresData(
+          month,
+          hiresByMonth.get(month),
+          firesByMonth.get(month)
+      ));
+    }
+    
+    return result;
+  }
+
+  /**
+   * Вычислить сводку по отделам
+   */
+  private List<AnalyticsDto.DepartmentSummary> calculateDepartmentsSummary(List<Employee> employees) {
+    return departmentRepository.findAll().stream()
+        .map(dept -> {
+          List<Employee> deptEmployees = employees.stream()
+              .filter(e -> e.getDepartment() != null && e.getDepartment().getId().equals(dept.getId()))
+              .collect(Collectors.toList());
+          
+          double avgComp = deptEmployees.stream()
+              .filter(e -> e.getCompetenceLevel() != null)
+              .mapToInt(Employee::getCompetenceLevel)
+              .average()
+              .orElse(0.0);
+          
+          return new AnalyticsDto.DepartmentSummary(
+              dept.getName(),
+              (long) deptEmployees.size(),
+              avgComp
+          );
+        })
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * Вычислить сводку по сотрудникам
+   */
+  private List<AnalyticsDto.EmployeeSummary> calculateEmployeesSummary(
+      List<Employee> employees,
+      List<Training> allTrainings,
+      List<AbsenceEntity> allAbsences) {
+    
+    Set<Long> trainedEmployeeIds = allTrainings.stream()
+        .map(t -> t.getEmployee().getId())
+        .collect(Collectors.toSet());
+    
+    Map<Long, Long> absencesByEmployee = allAbsences.stream()
+        .collect(Collectors.groupingBy(
+            a -> a.getEmployee().getId(),
+            Collectors.counting()
+        ));
+    
+    return employees.stream()
+        .map(e -> new AnalyticsDto.EmployeeSummary(
+            e.getFullName(),
+            e.getCompetenceLevel(),
+            trainedEmployeeIds.contains(e.getId()) ? "Да" : "Нет",
+            absencesByEmployee.getOrDefault(e.getId(), 0L)
+        ))
+        .collect(Collectors.toList());
+  }
+}
+

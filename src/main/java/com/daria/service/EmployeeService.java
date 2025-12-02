@@ -5,6 +5,7 @@ import com.daria.dto.EmployeeDto;
 import com.daria.dto.EmployeeUpdateRequest;
 import com.daria.entity.Department;
 import com.daria.entity.Employee;
+import com.daria.entity.enums.Gender;
 import com.daria.exception.BadRequestException;
 import com.daria.exception.ResourceNotFoundException;
 import com.daria.repository.DepartmentRepository;
@@ -27,10 +28,44 @@ public class EmployeeService {
   private final DepartmentRepository departmentRepository;
   private final UserRepository userRepository;
 
-  public List<EmployeeDto> getAllEmployees() {
-    return employeeRepository.findAll().stream()
+  /**
+   * Получить всех сотрудников с опциональной фильтрацией и сортировкой
+   * 
+   * @param search поисковый запрос (поиск по имени, может быть null или пустым)
+   * @param departmentId фильтр по отделу (может быть null)
+   * @param gender фильтр по полу (может быть null)
+   * @param sortBy тип сортировки: "absences" - по пропускам, "competence_level" - по уровню компетенции, null - без сортировки
+   * @return список сотрудников, соответствующих критериям
+   */
+  public List<EmployeeDto> getAllEmployees(String search, Long departmentId, Gender gender, String sortBy) {
+    List<Employee> employees;
+    
+    // Нормализуем search: если пустая строка, делаем null
+    String normalizedSearch = (search != null && search.trim().isEmpty()) ? null : search;
+    
+    // Выбираем метод репозитория в зависимости от сортировки
+    if ("absences".equals(sortBy)) {
+      employees = employeeRepository.findEmployeesWithFiltersSortedByAbsences(
+          normalizedSearch, departmentId, gender);
+    } else if ("competence_level".equals(sortBy)) {
+      employees = employeeRepository.findEmployeesWithFiltersSortedByCompetence(
+          normalizedSearch, departmentId, gender);
+    } else {
+      // Без сортировки или неизвестный тип сортировки
+      employees = employeeRepository.findEmployeesWithFilters(
+          normalizedSearch, departmentId, gender);
+    }
+    
+    return employees.stream()
         .map(this::toDto)
         .collect(Collectors.toList());
+  }
+  
+  /**
+   * Получить всех сотрудников без фильтрации (для обратной совместимости)
+   */
+  public List<EmployeeDto> getAllEmployees() {
+    return getAllEmployees(null, null, null, null);
   }
 
   public EmployeeDto getEmployeeById(Long id) {
