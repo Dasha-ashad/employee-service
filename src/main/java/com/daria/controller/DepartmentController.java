@@ -15,6 +15,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -51,22 +52,24 @@ public class DepartmentController {
     return ResponseEntity.ok(department);
   }
 
-  @Operation(summary = "Создать новый отдел", description = "Создает новый отдел в системе")
+  @Operation(summary = "Создать новый отдел", description = "Создает новый отдел в системе. Доступно только администраторам.")
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "201",
           description = "Отдел успешно создан",
           content = @Content(schema = @Schema(implementation = DepartmentDto.class))
       ),
-      @ApiResponse(responseCode = "400", description = "Некорректные данные запроса")
+      @ApiResponse(responseCode = "400", description = "Некорректные данные запроса"),
+      @ApiResponse(responseCode = "403", description = "Доступ запрещен. Требуется роль ADMIN")
   })
   @PostMapping
+  @PreAuthorize("hasRole('ADMIN')") // Только администраторы могут создавать отделы
   public ResponseEntity<DepartmentDto> createDepartment(@Valid @RequestBody DepartmentCreateRequest request) {
     DepartmentDto created = departmentService.createDepartment(request);
     return ResponseEntity.status(HttpStatus.CREATED).body(created);
   }
 
-  @Operation(summary = "Обновить отдел", description = "Обновляет информацию об отделе")
+  @Operation(summary = "Обновить отдел", description = "Обновляет информацию об отделе. Доступно только администраторам.")
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
@@ -74,9 +77,11 @@ public class DepartmentController {
           content = @Content(schema = @Schema(implementation = DepartmentDto.class))
       ),
       @ApiResponse(responseCode = "404", description = "Отдел не найден"),
-      @ApiResponse(responseCode = "400", description = "Некорректные данные запроса")
+      @ApiResponse(responseCode = "400", description = "Некорректные данные запроса"),
+      @ApiResponse(responseCode = "403", description = "Доступ запрещен. Требуется роль ADMIN")
   })
   @PutMapping("/{id}")
+  @PreAuthorize("hasRole('ADMIN')") // Только администраторы могут обновлять отделы
   public ResponseEntity<DepartmentDto> updateDepartment(
       @PathVariable Long id,
       @Valid @RequestBody DepartmentUpdateRequest request) {
@@ -84,12 +89,14 @@ public class DepartmentController {
     return ResponseEntity.ok(updated);
   }
 
-  @Operation(summary = "Удалить отдел", description = "Удаляет отдел из системы")
+  @Operation(summary = "Удалить отдел", description = "Удаляет отдел из системы. Доступно только администраторам.")
   @ApiResponses(value = {
       @ApiResponse(responseCode = "204", description = "Отдел успешно удален"),
-      @ApiResponse(responseCode = "404", description = "Отдел не найден")
+      @ApiResponse(responseCode = "404", description = "Отдел не найден"),
+      @ApiResponse(responseCode = "403", description = "Доступ запрещен. Требуется роль ADMIN")
   })
   @DeleteMapping("/{id}")
+  @PreAuthorize("hasRole('ADMIN')") // Только администраторы могут удалять отделы
   public ResponseEntity<Void> deleteDepartment(@PathVariable Long id) {
     departmentService.deleteDepartment(id);
     return ResponseEntity.noContent().build();

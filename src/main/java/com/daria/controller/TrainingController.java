@@ -15,6 +15,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -59,7 +60,7 @@ public class TrainingController {
     return ResponseEntity.ok(trainings);
   }
 
-  @Operation(summary = "Создать новое обучение", description = "Создает новое обучение для сотрудника")
+  @Operation(summary = "Создать новое обучение", description = "Создает новое обучение для сотрудника. Доступно администраторам и руководителям отделов.")
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "201",
@@ -67,15 +68,17 @@ public class TrainingController {
           content = @Content(schema = @Schema(implementation = TrainingDto.class))
       ),
       @ApiResponse(responseCode = "400", description = "Некорректные данные запроса"),
-      @ApiResponse(responseCode = "404", description = "Сотрудник не найден")
+      @ApiResponse(responseCode = "404", description = "Сотрудник не найден"),
+      @ApiResponse(responseCode = "403", description = "Доступ запрещен. Требуется роль ADMIN или HEAD")
   })
   @PostMapping
+  @PreAuthorize("hasAnyRole('ADMIN', 'HEAD')") // Только администраторы и руководители могут создавать обучения
   public ResponseEntity<TrainingDto> createTraining(@Valid @RequestBody TrainingCreateRequest request) {
     TrainingDto created = trainingService.createTraining(request);
     return ResponseEntity.status(HttpStatus.CREATED).body(created);
   }
 
-  @Operation(summary = "Обновить обучение", description = "Обновляет информацию об обучении")
+  @Operation(summary = "Обновить обучение", description = "Обновляет информацию об обучении. Доступно администраторам и руководителям отделов.")
   @ApiResponses(value = {
       @ApiResponse(
           responseCode = "200",
@@ -83,9 +86,11 @@ public class TrainingController {
           content = @Content(schema = @Schema(implementation = TrainingDto.class))
       ),
       @ApiResponse(responseCode = "404", description = "Обучение не найдено"),
-      @ApiResponse(responseCode = "400", description = "Некорректные данные запроса")
+      @ApiResponse(responseCode = "400", description = "Некорректные данные запроса"),
+      @ApiResponse(responseCode = "403", description = "Доступ запрещен. Требуется роль ADMIN или HEAD")
   })
   @PutMapping("/{id}")
+  @PreAuthorize("hasAnyRole('ADMIN', 'HEAD')") // Только администраторы и руководители могут обновлять обучения
   public ResponseEntity<TrainingDto> updateTraining(
       @PathVariable Long id,
       @Valid @RequestBody TrainingUpdateRequest request) {
@@ -93,12 +98,14 @@ public class TrainingController {
     return ResponseEntity.ok(updated);
   }
 
-  @Operation(summary = "Удалить обучение", description = "Удаляет обучение из системы")
+  @Operation(summary = "Удалить обучение", description = "Удаляет обучение из системы. Доступно администраторам и руководителям отделов.")
   @ApiResponses(value = {
       @ApiResponse(responseCode = "204", description = "Обучение успешно удалено"),
-      @ApiResponse(responseCode = "404", description = "Обучение не найдено")
+      @ApiResponse(responseCode = "404", description = "Обучение не найдено"),
+      @ApiResponse(responseCode = "403", description = "Доступ запрещен. Требуется роль ADMIN или HEAD")
   })
   @DeleteMapping("/{id}")
+  @PreAuthorize("hasAnyRole('ADMIN', 'HEAD')") // Только администраторы и руководители могут удалять обучения
   public ResponseEntity<Void> deleteTraining(@PathVariable Long id) {
     trainingService.deleteTraining(id);
     return ResponseEntity.noContent().build();

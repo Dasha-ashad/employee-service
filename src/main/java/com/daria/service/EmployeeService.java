@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -61,6 +62,21 @@ public class EmployeeService {
       throw new BadRequestException("Competence level must be between 1 and 3");
     }
 
+    // Валидация дат: hireDate должна быть после birthDate
+    if (request.birthDate() != null && request.hireDate() != null) {
+      if (request.hireDate().isBefore(request.birthDate())) {
+        throw new BadRequestException("Hire date cannot be before birth date");
+      }
+    }
+
+    // Валидация возраста: сотрудник должен быть старше 16 лет
+    if (request.birthDate() != null && request.hireDate() != null) {
+      long years = java.time.temporal.ChronoUnit.YEARS.between(request.birthDate(), request.hireDate());
+      if (years < 16) {
+        throw new BadRequestException("Employee must be at least 16 years old at hire date");
+      }
+    }
+
     Employee employee = Employee.builder()
         .user(request.userId() != null ? 
             userRepository.findById(request.userId()).orElse(null) : null)
@@ -77,16 +93,32 @@ public class EmployeeService {
     return toDto(saved);
   }
 
+  /**
+   * Обновление сотрудника с валидацией данных
+   * 
+   * Валидация:
+   * - competenceLevel должен быть от 1 до 3
+   * - hireDate должна быть после birthDate
+   * - fireDate должна быть после hireDate (если указана)
+   * - departmentId должен существовать (если указан)
+   */
   public EmployeeDto updateEmployee(Long id, EmployeeUpdateRequest request) {
     Employee employee = employeeRepository.findById(id)
         .orElseThrow(() -> new ResourceNotFoundException("Employee", id));
 
+    // Обновление полей
     if (request.fullName() != null) {
       employee.setFullName(request.fullName());
     }
     if (request.gender() != null) {
       employee.setGender(request.gender());
     }
+    
+    // Валидация и обновление дат
+    LocalDate birthDate = request.birthDate() != null ? request.birthDate() : employee.getBirthDate();
+    LocalDate hireDate = request.hireDate() != null ? request.hireDate() : employee.getHireDate();
+    LocalDate fireDate = request.fireDate() != null ? request.fireDate() : employee.getFireDate();
+    
     if (request.birthDate() != null) {
       employee.setBirthDate(request.birthDate());
     }
@@ -96,15 +128,35 @@ public class EmployeeService {
     if (request.fireDate() != null) {
       employee.setFireDate(request.fireDate());
     }
+    
+    // Валидация логики дат после обновления
+    if (birthDate != null && hireDate != null && hireDate.isBefore(birthDate)) {
+      throw new BadRequestException("Hire date cannot be before birth date");
+    }
+    
+    if (hireDate != null && fireDate != null && fireDate.isBefore(hireDate)) {
+      throw new BadRequestException("Fire date cannot be before hire date");
+    }
+    
+    // Валидация возраста при обновлении
+    if (birthDate != null && hireDate != null) {
+      long years = java.time.temporal.ChronoUnit.YEARS.between(birthDate, hireDate);
+      if (years < 16) {
+        throw new BadRequestException("Employee must be at least 16 years old at hire date");
+      }
+    }
+    
     if (request.competenceRank() != null) {
       employee.setCompetenceRank(request.competenceRank());
     }
+    
     if (request.competenceLevel() != null) {
       if (request.competenceLevel() < 1 || request.competenceLevel() > 3) {
         throw new BadRequestException("Competence level must be between 1 and 3");
       }
       employee.setCompetenceLevel(request.competenceLevel());
     }
+    
     if (request.departmentId() != null) {
       Department department = departmentRepository.findById(request.departmentId())
           .orElseThrow(() -> new ResourceNotFoundException("Department", request.departmentId()));

@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
@@ -36,10 +37,12 @@ public class AuthController {
   @ApiResponses(value = {
       @ApiResponse(responseCode = "201", description = "Пользователь успешно зарегистрирован"),
       @ApiResponse(responseCode = "400", description = "Некорректные данные запроса"),
-      @ApiResponse(responseCode = "409", description = "Пользователь с таким логином уже существует")
+      @ApiResponse(responseCode = "409", description = "Пользователь с таким логином уже существует"),
+      @ApiResponse(responseCode = "403", description = "Доступ запрещен. Требуется роль ADMIN")
   })
   @PostMapping("/register")
   @ResponseStatus(HttpStatus.CREATED)
+  @PreAuthorize("hasRole('ADMIN')") // Только администраторы могут регистрировать новых пользователей
   public void register(@RequestBody RegisterRequest req) {
     authService.register(req);
   }

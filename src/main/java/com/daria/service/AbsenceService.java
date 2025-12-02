@@ -42,9 +42,23 @@ public class AbsenceService {
         .collect(Collectors.toList());
   }
 
+  /**
+   * Создание пропуска с валидацией данных
+   * 
+   * Валидация:
+   * - employeeId должен существовать
+   * - endDate должна быть после startDate
+   */
   public AbsenceDto createAbsence(AbsenceCreateRequest request) {
     Employee employee = employeeRepository.findById(request.employeeId())
         .orElseThrow(() -> new ResourceNotFoundException("Employee", request.employeeId()));
+
+    // Валидация дат: endDate должна быть после startDate
+    if (request.startDate() != null && request.endDate() != null) {
+      if (request.endDate().isBefore(request.startDate())) {
+        throw new com.daria.exception.BadRequestException("End date cannot be before start date");
+      }
+    }
 
     AbsenceEntity absence = AbsenceEntity.builder()
         .employee(employee)
@@ -58,9 +72,15 @@ public class AbsenceService {
     return toDto(saved);
   }
 
+  /**
+   * Обновление пропуска с валидацией данных
+   */
   public AbsenceDto updateAbsence(Long id, AbsenceUpdateRequest request) {
     AbsenceEntity absence = absenceRepository.findById(id)
         .orElseThrow(() -> new ResourceNotFoundException("Absence", id));
+
+    java.time.LocalDate startDate = request.startDate() != null ? request.startDate() : absence.getStartDate();
+    java.time.LocalDate endDate = request.endDate() != null ? request.endDate() : absence.getEndDate();
 
     if (request.startDate() != null) {
       absence.setStartDate(request.startDate());
@@ -68,6 +88,12 @@ public class AbsenceService {
     if (request.endDate() != null) {
       absence.setEndDate(request.endDate());
     }
+    
+    // Валидация дат после обновления
+    if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
+      throw new com.daria.exception.BadRequestException("End date cannot be before start date");
+    }
+    
     if (request.description() != null) {
       absence.setDescription(request.description());
     }
