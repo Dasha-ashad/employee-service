@@ -1,9 +1,9 @@
 -- Пароли должны храниться в BCrypt! Здесь — только пример.
 INSERT INTO users (login, password_hash, role)
 VALUES
-    ('admin', '$2a$10$abcdefghijklmnopqrstuv', 'ROLE_ADMIN'),
-    ('head1', '$2a$10$abcdefghijklmnopqrstuv', 'ROLE_HEAD'),
-    ('emp1', '$2a$10$abcdefghijklmnopqrstuv', 'ROLE_EMPLOYEE');
+    ('admin', '$2a$10$kEXmQ6v3ARTm5uufwTbPYeCsiUBF5n3uv0w0TwpZdq8Sb7G4wOg/W', 'ADMIN'),
+    ('head1', '$2a$10$kEXmQ6v3ARTm5uufwTbPYeCsiUBF5n3uv0w0TwpZdq8Sb7G4wOg/W', 'HEAD'),
+    ('emp1', '$2a$10$kEXmQ6v3ARTm5uufwTbPYeCsiUBF5n3uv0w0TwpZdq8Sb7G4wOg/W', 'EMPLOYEE');
 
 INSERT INTO departments (name)
 VALUES
