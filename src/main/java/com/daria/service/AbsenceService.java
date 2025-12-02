@@ -24,8 +24,11 @@ public class AbsenceService {
   private final AbsenceRepository absenceRepository;
   private final EmployeeRepository employeeRepository;
 
+  /**
+   * Получить все пропуски, отсортированные по дате начала (от новых к старым)
+   */
   public List<AbsenceDto> getAllAbsences() {
-    return absenceRepository.findAll().stream()
+    return absenceRepository.findAllOrderByStartDateDesc().stream()
         .map(this::toDto)
         .collect(Collectors.toList());
   }
@@ -36,8 +39,11 @@ public class AbsenceService {
     return toDto(absence);
   }
 
+  /**
+   * Получить пропуски сотрудника, отсортированные по дате начала
+   */
   public List<AbsenceDto> getAbsencesByEmployeeId(Long employeeId) {
-    return absenceRepository.findByEmployeeId(employeeId).stream()
+    return absenceRepository.findByEmployeeIdOrderByStartDateDesc(employeeId).stream()
         .map(this::toDto)
         .collect(Collectors.toList());
   }
@@ -53,12 +59,40 @@ public class AbsenceService {
     Employee employee = employeeRepository.findById(request.employeeId())
         .orElseThrow(() -> new ResourceNotFoundException("Employee", request.employeeId()));
 
-    // Валидация дат: endDate должна быть после startDate
-    if (request.startDate() != null && request.endDate() != null) {
+    // Валидация дат
+    if (request.startDate() == null) {
+      throw new com.daria.exception.BadRequestException("Start date is required");
+    }
+    
+    // Проверка на будущие даты (можно разрешить, но предупреждаем)
+    if (request.startDate().isAfter(java.time.LocalDate.now().plusYears(1))) {
+      throw new com.daria.exception.BadRequestException("Start date cannot be more than 1 year in the future");
+    }
+    
+    // Валидация: endDate должна быть после startDate
+    if (request.endDate() != null) {
       if (request.endDate().isBefore(request.startDate())) {
         throw new com.daria.exception.BadRequestException("End date cannot be before start date");
       }
     }
+    
+    // Проверка на пересекающиеся даты пропусков для того же сотрудника
+    // (опционально - можно разрешить несколько пропусков одновременно)
+    // Для строгой проверки можно раскомментировать:
+    /*
+    List<AbsenceEntity> existingAbsences = absenceRepository.findByEmployeeId(request.employeeId());
+    for (AbsenceEntity existing : existingAbsences) {
+      if (isDateRangeOverlapping(
+          request.startDate(), 
+          request.endDate() != null ? request.endDate() : request.startDate(),
+          existing.getStartDate(),
+          existing.getEndDate() != null ? existing.getEndDate() : existing.getStartDate())) {
+        throw new com.daria.exception.BadRequestException(
+            "Absence dates overlap with existing absence from " + existing.getStartDate() + 
+            " to " + (existing.getEndDate() != null ? existing.getEndDate() : existing.getStartDate()));
+      }
+    }
+    */
 
     AbsenceEntity absence = AbsenceEntity.builder()
         .employee(employee)
@@ -94,6 +128,11 @@ public class AbsenceService {
       throw new com.daria.exception.BadRequestException("End date cannot be before start date");
     }
     
+    // Проверка на будущие даты
+    if (startDate != null && startDate.isAfter(java.time.LocalDate.now().plusYears(1))) {
+      throw new com.daria.exception.BadRequestException("Start date cannot be more than 1 year in the future");
+    }
+    
     if (request.description() != null) {
       absence.setDescription(request.description());
     }
@@ -111,10 +150,41 @@ public class AbsenceService {
     absenceRepository.delete(absence);
   }
 
+  /**
+   * Проверка пересечения диапазонов дат
+   * Используется для валидации пересекающихся пропусков (опционально)
+   * 
+   * @param start1 начало первого диапазона
+   * @param end1 конец первого диапазона (может быть null - однодневный)
+   * @param start2 начало второго диапазона
+   * @param end2 конец второго диапазона (может быть null - однодневный)
+   * @return true если диапазоны пересекаются
+   */
+  @SuppressWarnings("unused")
+  private boolean isDateRangeOverlapping(
+      java.time.LocalDate start1, 
+      java.time.LocalDate end1,
+      java.time.LocalDate start2, 
+      java.time.LocalDate end2) {
+    // Если endDate = null, считаем однодневным пропуском
+    java.time.LocalDate actualEnd1 = end1 != null ? end1 : start1;
+    java.time.LocalDate actualEnd2 = end2 != null ? end2 : start2;
+    
+    // Диапазоны пересекаются, если:
+    // start1 <= end2 && start2 <= end1
+    return !start1.isAfter(actualEnd2) && !start2.isAfter(actualEnd1);
+  }
+
   private AbsenceDto toDto(AbsenceEntity absence) {
+    // Получаем имя сотрудника для удобства отображения
+    String employeeName = absence.getEmployee() != null 
+        ? absence.getEmployee().getFullName() 
+        : null;
+    
     return AbsenceDto.of(
         absence.getId(),
         absence.getEmployee().getId(),
+        employeeName,
         absence.getStartDate(),
         absence.getEndDate(),
         absence.getDescription(),

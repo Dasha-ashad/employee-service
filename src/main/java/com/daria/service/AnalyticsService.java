@@ -207,18 +207,31 @@ public class AnalyticsService {
 
   /**
    * Вычислить количество уволенных
+   * 
+   * Edge cases:
+   * - Обработка null дат увольнения
+   * - Правильная фильтрация по периоду (включая начало периода)
+   * - Учет текущей даты (не учитываем будущие даты)
    */
   private Long calculateFiredCount(List<Employee> employees, String period) {
     LocalDate periodStart = getPeriodStart(period);
+    LocalDate now = LocalDate.now();
     
     return employees.stream()
         .filter(e -> {
           if (e.getFireDate() == null) {
             return false;
           }
-          if (periodStart != null) {
-            return e.getFireDate().isAfter(periodStart);
+          // Не учитываем будущие даты увольнения
+          if (e.getFireDate().isAfter(now)) {
+            return false;
           }
+          // Если период указан, учитываем только увольнения в периоде
+          if (periodStart != null) {
+            // Включаем увольнения, которые произошли в периоде или после начала периода
+            return !e.getFireDate().isBefore(periodStart);
+          }
+          // Если период не указан, учитываем все увольнения
           return true;
         })
         .count();
@@ -383,57 +396,72 @@ public class AnalyticsService {
    * - Учитывает период фильтрации
    * - Обрабатывает null даты
    * - Фильтрует данные по периоду, если указан
+   * - Показывает только месяцы в пределах периода
+   * - Группирует по месяцам с учетом года
    */
   private List<AnalyticsDto.HiresFiresData> calculateHiresFires(List<Employee> employees, String period) {
     List<AnalyticsDto.HiresFiresData> result = new ArrayList<>();
     LocalDate periodStart = getPeriodStart(period);
+    LocalDate now = LocalDate.now();
     
-    // Группируем по месяцам в пределах периода
+    // Группируем по месяцам с учетом года (ключ: "YYYY-MM")
     Map<String, Long> hiresByMonth = new LinkedHashMap<>();
     Map<String, Long> firesByMonth = new LinkedHashMap<>();
     
-    String[] months = {"Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"};
+    // Определяем диапазон месяцев для отображения
+    LocalDate startDate = periodStart != null ? periodStart : LocalDate.of(now.getYear(), 1, 1);
+    LocalDate endDate = now;
     
-    // Инициализируем все месяцы
-    for (String month : months) {
-      hiresByMonth.put(month, 0L);
-      firesByMonth.put(month, 0L);
+    // Инициализируем все месяцы в диапазоне
+    LocalDate current = startDate.withDayOfMonth(1);
+    while (!current.isAfter(endDate)) {
+      String monthKey = String.format("%d-%02d", current.getYear(), current.getMonthValue());
+      hiresByMonth.put(monthKey, 0L);
+      firesByMonth.put(monthKey, 0L);
+      current = current.plusMonths(1);
     }
+    
+    String[] monthNames = {"Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"};
     
     // Подсчитываем приемы и увольнения
     employees.forEach(e -> {
       // Приемы
       if (e.getHireDate() != null) {
-        // Если период указан, учитываем только даты в периоде
-        if (periodStart == null || !e.getHireDate().isBefore(periodStart)) {
-          int monthIndex = e.getHireDate().getMonthValue() - 1;
-          if (monthIndex >= 0 && monthIndex < months.length) {
-            String month = months[monthIndex];
-            hiresByMonth.put(month, hiresByMonth.get(month) + 1);
-          }
+        LocalDate hireDate = e.getHireDate();
+        // Проверяем, что дата в пределах периода и не в будущем
+        if (!hireDate.isAfter(now) && (periodStart == null || !hireDate.isBefore(periodStart))) {
+          String monthKey = String.format("%d-%02d", hireDate.getYear(), hireDate.getMonthValue());
+          hiresByMonth.put(monthKey, hiresByMonth.getOrDefault(monthKey, 0L) + 1);
         }
       }
       
       // Увольнения
       if (e.getFireDate() != null) {
-        // Если период указан, учитываем только даты в периоде
-        if (periodStart == null || !e.getFireDate().isBefore(periodStart)) {
-          int monthIndex = e.getFireDate().getMonthValue() - 1;
-          if (monthIndex >= 0 && monthIndex < months.length) {
-            String month = months[monthIndex];
-            firesByMonth.put(month, firesByMonth.get(month) + 1);
-          }
+        LocalDate fireDate = e.getFireDate();
+        // Проверяем, что дата в пределах периода и не в будущем
+        if (!fireDate.isAfter(now) && (periodStart == null || !fireDate.isBefore(periodStart))) {
+          String monthKey = String.format("%d-%02d", fireDate.getYear(), fireDate.getMonthValue());
+          firesByMonth.put(monthKey, firesByMonth.getOrDefault(monthKey, 0L) + 1);
         }
       }
     });
     
-    // Формируем результат
-    for (String month : months) {
+    // Формируем результат в хронологическом порядке
+    current = startDate.withDayOfMonth(1);
+    while (!current.isAfter(endDate)) {
+      String monthKey = String.format("%d-%02d", current.getYear(), current.getMonthValue());
+      String monthName = monthNames[current.getMonthValue() - 1];
+      // Если год отличается от текущего, добавляем год к названию
+      String displayName = current.getYear() != now.getYear() 
+          ? String.format("%s %d", monthName, current.getYear())
+          : monthName;
+      
       result.add(new AnalyticsDto.HiresFiresData(
-          month,
-          hiresByMonth.get(month),
-          firesByMonth.get(month)
+          displayName,
+          hiresByMonth.getOrDefault(monthKey, 0L),
+          firesByMonth.getOrDefault(monthKey, 0L)
       ));
+      current = current.plusMonths(1);
     }
     
     return result;
@@ -466,26 +494,40 @@ public class AnalyticsService {
 
   /**
    * Вычислить сводку по сотрудникам
+   * 
+   * Edge cases:
+   * - Обработка null значений employee в trainings и absences
+   * - Обработка null значений fullName и competenceLevel
+   * - Безопасная обработка отсутствующих данных
    */
   private List<AnalyticsDto.EmployeeSummary> calculateEmployeesSummary(
       List<Employee> employees,
       List<Training> allTrainings,
       List<AbsenceEntity> allAbsences) {
     
+    if (employees.isEmpty()) {
+      return new ArrayList<>();
+    }
+    
+    // Безопасно собираем ID обученных сотрудников
     Set<Long> trainedEmployeeIds = allTrainings.stream()
+        .filter(t -> t != null && t.getEmployee() != null && t.getEmployee().getId() != null)
         .map(t -> t.getEmployee().getId())
         .collect(Collectors.toSet());
     
+    // Безопасно собираем количество пропусков по сотрудникам
     Map<Long, Long> absencesByEmployee = allAbsences.stream()
+        .filter(a -> a != null && a.getEmployee() != null && a.getEmployee().getId() != null)
         .collect(Collectors.groupingBy(
             a -> a.getEmployee().getId(),
             Collectors.counting()
         ));
     
     return employees.stream()
+        .filter(e -> e != null) // Фильтруем null сотрудников
         .map(e -> new AnalyticsDto.EmployeeSummary(
-            e.getFullName(),
-            e.getCompetenceLevel(),
+            e.getFullName() != null ? e.getFullName() : "Не указано",
+            e.getCompetenceLevel() != null ? e.getCompetenceLevel() : 0,
             trainedEmployeeIds.contains(e.getId()) ? "Да" : "Нет",
             absencesByEmployee.getOrDefault(e.getId(), 0L)
         ))
