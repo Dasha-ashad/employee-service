@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: employee_db
+      MYSQL_USER: mysql
+      MYSQL_PASSWORD: mysql
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: java-backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/employee_db
+      SPRING_DATASOURCE_USERNAME: mysql
+      SPRING_DATASOURCE_PASSWORD: mysql
+      # JWT Configuration - используйте секреты из переменных окружения или secrets
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-SuperStrongSecretKeyForJWT_ChangeMe_2025_Minimum256BitsRequired}
+      APP_JWT_EXPIRATION_MS: ${APP_JWT_EXPIRATION_MS:-3600000}
+    ports:
+      - "8080:8080"
+
+#  frontend:
+#    build: ./frontend
+#    container_name: react-frontend
+#    restart: always
+#    ports:
+#      - "3000:80"
+#    depends_on:
+#      - backend
+
+volumes:
+  mysql_data:

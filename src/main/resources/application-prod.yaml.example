@@ -1,0 +1,20 @@
+# Пример конфигурации для production окружения
+# Скопируйте этот файл в application-prod.yaml и НЕ коммитьте его в репозиторий!
+# Используйте переменные окружения для секретов
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/employee_db}
+    username: ${SPRING_DATASOURCE_USERNAME:mysql}
+    password: ${SPRING_DATASOURCE_PASSWORD:mysql}
+
+# JWT Configuration
+# ВАЖНО: Используйте переменные окружения для секретов в production!
+# Установите переменные окружения:
+# export APP_JWT_SECRET="your-very-strong-secret-key-minimum-256-bits"
+# export APP_JWT_EXPIRATION_MS="3600000"
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET}
+    expiration-ms: ${APP_JWT_EXPIRATION_MS:3600000}
+
