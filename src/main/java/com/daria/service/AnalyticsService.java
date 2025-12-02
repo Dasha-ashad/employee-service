@@ -42,7 +42,7 @@ public class AnalyticsService {
    * Получить аналитические данные с фильтрацией
    * 
    * @param departmentId фильтр по отделу (null = все отделы)
-   * @param period период: "month", "quarter", "year" (null = все время)
+   * @param period период: "month", "quarter", "year", "2years", "3years", "5years" (null = все время)
    * @return аналитические данные
    */
   public AnalyticsDto getAnalytics(Long departmentId, String period) {
@@ -93,14 +93,34 @@ public class AnalyticsService {
 
   /**
    * Получить отфильтрованных сотрудников
+   * 
+   * Edge cases:
+   * - Обработка null сотрудников
+   * - Обработка null отделов
+   * - Обработка null ID отделов
+   * - Обработка null дат
    */
   private List<Employee> getFilteredEmployees(Long departmentId, String period) {
     List<Employee> allEmployees = employeeRepository.findAll();
     
+    // Безопасная фильтрация: исключаем null сотрудников
+    allEmployees = allEmployees.stream()
+        .filter(e -> e != null)
+        .collect(Collectors.toList());
+    
     // Фильтр по отделу
     if (departmentId != null) {
       allEmployees = allEmployees.stream()
-          .filter(e -> e.getDepartment() != null && e.getDepartment().getId().equals(departmentId))
+          .filter(e -> {
+            // Безопасная проверка: проверяем все null значения
+            if (e.getDepartment() == null) {
+              return false;
+            }
+            if (e.getDepartment().getId() == null) {
+              return false;
+            }
+            return e.getDepartment().getId().equals(departmentId);
+          })
           .collect(Collectors.toList());
     }
     
@@ -110,6 +130,7 @@ public class AnalyticsService {
       if (periodStart != null) {
         allEmployees = allEmployees.stream()
             .filter(e -> {
+              // Безопасная проверка: обрабатываем null даты
               // Включаем сотрудника, если:
               // 1. Он был принят в периоде (hireDate >= periodStart)
               if (e.getHireDate() != null && !e.getHireDate().isBefore(periodStart)) {
@@ -135,14 +156,30 @@ public class AnalyticsService {
 
   /**
    * Получить начало периода
+   * 
+   * Edge cases:
+   * - Обработка null period
+   * - Обработка пустых строк
+   * - Обработка невалидных значений периода
+   * - Поддержка периодов: month, quarter, year, 2years, 3years, 5years
    */
   private LocalDate getPeriodStart(String period) {
+    // Безопасная проверка: если period null или пустой, возвращаем null
+    if (period == null || period.trim().isEmpty()) {
+      return null;
+    }
+    
     LocalDate now = LocalDate.now();
-    return switch (period.toLowerCase()) {
+    String normalizedPeriod = period.trim().toLowerCase();
+    
+    return switch (normalizedPeriod) {
       case "month" -> now.minusMonths(1);
       case "quarter" -> now.minusMonths(3);
       case "year" -> now.minusYears(1);
-      default -> null;
+      case "2years" -> now.minusYears(2);
+      case "3years" -> now.minusYears(3);
+      case "5years" -> now.minusYears(5);
+      default -> null; // Невалидный период - возвращаем null
     };
   }
 
@@ -370,15 +407,28 @@ public class AnalyticsService {
    * Edge cases:
    * - Обработка null отделов
    * - Обработка null имен отделов
+   * - Обработка null сотрудников
    * - Пустые списки
    */
   private List<AnalyticsDto.DepartmentChartData> calculateDepartmentDistribution(List<Employee> employees) {
-    if (employees.isEmpty()) {
+    if (employees == null || employees.isEmpty()) {
       return new ArrayList<>();
     }
     
     Map<String, Long> distribution = employees.stream()
-        .filter(e -> e.getDepartment() != null && e.getDepartment().getName() != null)
+        .filter(e -> {
+          // Безопасная проверка: проверяем все null значения
+          if (e == null) {
+            return false;
+          }
+          if (e.getDepartment() == null) {
+            return false;
+          }
+          if (e.getDepartment().getName() == null || e.getDepartment().getName().trim().isEmpty()) {
+            return false;
+          }
+          return true;
+        })
         .collect(Collectors.groupingBy(
             e -> e.getDepartment().getName(),
             Collectors.counting()
@@ -469,22 +519,44 @@ public class AnalyticsService {
 
   /**
    * Вычислить сводку по отделам
+   * 
+   * Edge cases:
+   * - Обработка null отделов
+   * - Обработка null имен отделов
+   * - Обработка null ID отделов
+   * - Обработка null сотрудников
    */
   private List<AnalyticsDto.DepartmentSummary> calculateDepartmentsSummary(List<Employee> employees) {
     return departmentRepository.findAll().stream()
+        .filter(dept -> dept != null && dept.getId() != null) // Фильтруем null отделы
         .map(dept -> {
           List<Employee> deptEmployees = employees.stream()
-              .filter(e -> e.getDepartment() != null && e.getDepartment().getId().equals(dept.getId()))
+              .filter(e -> {
+                // Безопасная проверка: проверяем все null значения
+                if (e == null) {
+                  return false;
+                }
+                if (e.getDepartment() == null) {
+                  return false;
+                }
+                if (e.getDepartment().getId() == null) {
+                  return false;
+                }
+                return e.getDepartment().getId().equals(dept.getId());
+              })
               .collect(Collectors.toList());
           
           double avgComp = deptEmployees.stream()
-              .filter(e -> e.getCompetenceLevel() != null)
+              .filter(e -> e != null && e.getCompetenceLevel() != null)
               .mapToInt(Employee::getCompetenceLevel)
               .average()
               .orElse(0.0);
           
+          // Безопасная обработка null имени отдела
+          String deptName = dept.getName() != null ? dept.getName() : "Не указано";
+          
           return new AnalyticsDto.DepartmentSummary(
-              dept.getName(),
+              deptName,
               (long) deptEmployees.size(),
               avgComp
           );

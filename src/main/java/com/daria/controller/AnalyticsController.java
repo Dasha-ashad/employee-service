@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*;
  * 
  * Поддерживает фильтрацию:
  * - По отделу (departmentId)
- * - По периоду (period: month, quarter, year)
+ * - По периоду (period: month, quarter, year, 2years, 3years, 5years)
  */
 @RestController
 @RequestMapping("/v1/employee-service/analytics")
@@ -35,30 +35,41 @@ public class AnalyticsController {
       summary = "Получить аналитические данные",
       description = "Возвращает агрегированные аналитические данные с опциональной фильтрацией. " +
           "Доступно всем аутентифицированным пользователям. " +
-          "Параметры фильтрации: departmentId (фильтр по отделу), period (период: month, quarter, year).")
+          "Параметры фильтрации: departmentId (фильтр по отделу), period (период: month, quarter, year, 2years, 3years, 5years).")
   @ApiResponse(responseCode = "200", description = "Аналитические данные успешно получены")
   @GetMapping
   public ResponseEntity<AnalyticsDto> getAnalytics(
       @RequestParam(required = false) Long departmentId,
       @RequestParam(required = false) String period) {
     
-    // Валидация и нормализация параметров
-    Long normalizedDepartmentId = null;
-    if (departmentId != null && departmentId > 0) {
-      normalizedDepartmentId = departmentId;
-    }
-    
-    String normalizedPeriod = null;
-    if (period != null && !period.trim().isEmpty()) {
-      String trimmedPeriod = period.trim().toLowerCase();
-      if ("month".equals(trimmedPeriod) || "quarter".equals(trimmedPeriod) || "year".equals(trimmedPeriod)) {
-        normalizedPeriod = trimmedPeriod;
+    try {
+      // Валидация и нормализация параметров
+      Long normalizedDepartmentId = null;
+      if (departmentId != null && departmentId > 0) {
+        normalizedDepartmentId = departmentId;
       }
-      // Если период невалидный, игнорируем его
+      
+      String normalizedPeriod = null;
+      if (period != null && !period.trim().isEmpty()) {
+        String trimmedPeriod = period.trim().toLowerCase();
+        // Поддерживаем периоды: month, quarter, year, 2years, 3years, 5years
+        if ("month".equals(trimmedPeriod) || "quarter".equals(trimmedPeriod) || 
+            "year".equals(trimmedPeriod) || "2years".equals(trimmedPeriod) || 
+            "3years".equals(trimmedPeriod) || "5years".equals(trimmedPeriod)) {
+          normalizedPeriod = trimmedPeriod;
+        }
+        // Если период невалидный, игнорируем его
+      }
+      
+      AnalyticsDto analytics = analyticsService.getAnalytics(normalizedDepartmentId, normalizedPeriod);
+      return ResponseEntity.ok(analytics);
+    } catch (Exception e) {
+      // Логируем ошибку для отладки
+      System.err.println("Error in getAnalytics: " + e.getMessage());
+      e.printStackTrace();
+      // Пробрасываем исключение дальше для обработки в GlobalExceptionHandler
+      throw e;
     }
-    
-    AnalyticsDto analytics = analyticsService.getAnalytics(normalizedDepartmentId, normalizedPeriod);
-    return ResponseEntity.ok(analytics);
   }
 }
 
