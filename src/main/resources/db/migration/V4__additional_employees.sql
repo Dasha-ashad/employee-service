@@ -92,7 +92,11 @@ INSERT INTO employees (user_id, full_name, gender, birth_date, hire_date, fire_d
     ((SELECT id FROM users WHERE login = 'emp_lazarev'), 'Лазарев Лазарь Лазаревич', 'М', '1992-11-17', '2020-07-15', NULL, 'MIDDLE', 2, (SELECT id FROM departments WHERE name = 'DevOps')),
     ((SELECT id FROM users WHERE login = 'emp_makarov'), 'Макарова Макар Макаровна', 'Ж', '1994-01-29', '2021-06-01', NULL, 'JUNIOR', 1, (SELECT id FROM departments WHERE name = 'DevOps')),
     ((SELECT id FROM users WHERE login = 'emp_naumov'), 'Наумов Наум Наумович', 'М', '1991-04-11', '2020-09-20', NULL, 'MIDDLE', 2, (SELECT id FROM departments WHERE name = 'DevOps')),
-    ((SELECT id FROM users WHERE login = 'head_devops'), 'Осипов Осип Осипович', 'М', '1987-07-26', '2019-05-10', NULL, 'SENIOR', 3, (SELECT id FROM departments WHERE name = 'DevOps'));
+    ((SELECT id FROM users WHERE login = 'head_devops'), 'Осипов Осип Осипович', 'М', '1987-07-26', '2019-05-10', NULL, 'SENIOR', 3, (SELECT id FROM departments WHERE name = 'DevOps')),
+    
+    -- Руководители отделов (создаем employees для head_finance и head_legal)
+    ((SELECT id FROM users WHERE login = 'head_finance'), 'Финансовый Руководитель', 'М', '1985-01-01', '2018-01-01', NULL, 'SENIOR', 3, (SELECT id FROM departments WHERE name = 'Бухгалтерия')),
+    ((SELECT id FROM users WHERE login = 'head_legal'), 'Юридический Руководитель', 'Ж', '1986-02-01', '2018-02-01', NULL, 'SENIOR', 3, (SELECT id FROM departments WHERE name = 'Юридический отдел'));
 
 -- ============================================
 -- 3. Назначение руководителей отделов
@@ -131,7 +135,7 @@ INSERT INTO trainings (employee_id, training_name, start_date, end_date, level_b
 -- ============================================
 -- 5. Дополнительные пропуски (20 записей)
 -- ============================================
-INSERT INTO absences (employee_id, start_date, end_date, reason, status) VALUES
+INSERT INTO absences (employee_id, start_date, end_date, description, status) VALUES
     -- Отпуска
     ((SELECT id FROM employees WHERE user_id = (SELECT id FROM users WHERE login = 'emp_ivanov2')), '2023-07-01', '2023-07-14', 'Ежегодный отпуск', 'GOOD_REASON'),
     ((SELECT id FROM employees WHERE user_id = (SELECT id FROM users WHERE login = 'emp_petrov2')), '2023-08-01', '2023-08-14', 'Ежегодный отпуск', 'GOOD_REASON'),
